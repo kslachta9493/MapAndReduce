@@ -14,6 +14,33 @@ int num_maps = 2;
 int num_reduces = 2;
 char* inputfile = NULL;
 char* outfile = NULL;
+/*
+	Inputreader should take the inputfile and break it into similar size chunks for use in the parallel map functions
+*/
+void inputreader()
+{
+}
+/*
+	Map will be called once per pthread/process where # of pthreads/processes is equal to num_maps
+	Map for wordcount will generate a key/value pair where key = unique word and value = # of times it is seen
+	Map will put its list of key/value pairs into shared memory for reduces threads/processes to use
+*/
+void map()
+{
+}
+/*
+	There will be num_reduces of threads/processes running.
+	Reduce will take all the key/value pairs of a unique word and sum it
+	Example:
+		out, 3
+		out, 4
+		out, 1
+	Reduced:
+		out, 8
+*/
+void reduce()
+{
+}
 void validflags(int argc, char* argv[])
 {
 	int i = 0;
@@ -77,4 +104,5 @@ void validflags(int argc, char* argv[])
 }
 int main (int argc, char* argv[]) {
 	validflags(argc, argv);
+	inputreader();
 }
