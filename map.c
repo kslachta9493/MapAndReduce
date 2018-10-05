@@ -5,52 +5,58 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
-int app = 0;
-/*
-	0 = sort
-	1 = wordcount
 
-	0 = threads
-	1 = processes
-*/
+int app = 0;
 int impl = 0;
 int num_maps = 2;
 int num_reduces = 2;
 char* inputfile = NULL;
 char* outfile = NULL;
-double total= 0;
+int total= 0;
 typedef struct node {
     int val;
     char* word;
     int count;
     struct node * next;
-};
+}node;
+/*
+	Map will be called once per pthread/process where # of pthreads/processes is equal to num_maps
+	Map for wordcount will generate a key/value pair where key = unique word and value = # of times it is seen
+	Map will put its list of key/value pairs into shared memory for reduces threads/processes to use
+*/
+void map(node* head,int wordcount)
+{
+}
 
 /*
 	Inputreader should take the inputfile and break it into similar size chunks for use in the parallel map functions
 */
-node* inputreader(FILE* filename, int wordcount)
+node* inputreader(char* filename, int wordcount)
 {
-	FILE* fp = fopen(fileName, "r");
-	char* word;
+	FILE* fp = fopen(filename, "r");
+	char word[250];
 	// counting words
+	if (fp == NULL)
+		printf("FAIL FAIL FAIL\n");
 	node* head = NULL;
 	node* tail = NULL;
-	node* next = NULL:
+	node* next = NULL;
 	int val;
 	if(wordcount == 0){
 		while(fscanf(fp,"%s",word)==1){
 			if(head = NULL){
 				head = (node*)malloc(sizeof(node));
-				head.word = word;
+				head->word = word;
 				tail = head;
 			}
 			else{
 				next = (node*)malloc(sizeof(node));
-				next.word = word;
-				tail.next = next;
+				next->word = word;
+				//this line seems odd
+				//tail->next = next;
 				tail = next;
 			}
+			//printf("STARTING %d\n", total);
 			total++;
 		}
 	}
@@ -59,19 +65,19 @@ node* inputreader(FILE* filename, int wordcount)
 		while(fscanf(fp,"%d",val)==1){
 			if(head = NULL){
 				head = (node*)malloc(sizeof(node));
-				head.val = val;
+				head->val = val;
 				tail = head;
 			}
 			else{
 				next = (node*)malloc(sizeof(node));
-				next.val = val;
-				tail.next = next;
+				next->val = val;
+				tail->next = next;
 				tail = next;
 			}
 			total++;
 		}
 	}
-	fclose(fp);
+	//fclose(fp);
 	return head;
 }
 /*
@@ -82,15 +88,17 @@ node* mapper(node* head, int wordcount, int procs,int maps){
 	node*next;
 	int i = 1;
 	double s = total/maps;
+	int size = 0;
 
 	if(ceil(s)*(maps-1)<total){
-		s = ceil(s);
+		size = ceil(s);
 	}
 	else{
-		s = floor(s);
+		size = floor(s);
 	}
 	int currmap = 1;
-	pid_t = pid;
+	int pid;
+	int pid_t = pid;
 	pthread_t tid; 
 	//processes
 	if(procs == 0){
@@ -98,9 +106,9 @@ node* mapper(node* head, int wordcount, int procs,int maps){
 			if(currmap == maps){
 				break;
 			}
-			if(s%i==0){
-				next = curr.next;
-				curr.next = NULL;
+			if(size%i==0){
+				next = curr->next;
+				curr->next = NULL;
 				pid = fork();
 				if(pid == 0){
 					map(head,wordcount);
@@ -113,7 +121,7 @@ node* mapper(node* head, int wordcount, int procs,int maps){
 			}
 			
 			i++;
-			curr = curr.next;
+			curr = curr->next;
 		}
 		pid = fork();
 		if(pid == 0){
@@ -127,9 +135,9 @@ node* mapper(node* head, int wordcount, int procs,int maps){
 			if(currmap == maps){
 				break;
 			}
-			if(s%i==0){
-				next = curr.next;
-				curr.next = NULL;
+			if(size%i==0){
+				next = curr->next;
+				curr->next = NULL;
 				//CREATE THREAD send head
 				head = next;
 				curr = head;
@@ -137,7 +145,7 @@ node* mapper(node* head, int wordcount, int procs,int maps){
 			}
 				
 			i++;
-			curr = curr.next;
+			curr = curr->next;
 		}
 		//CREATE THREAD send head
 		//JOIN THREAD
@@ -146,14 +154,7 @@ node* mapper(node* head, int wordcount, int procs,int maps){
 
 
 
-/*
-	Map will be called once per pthread/process where # of pthreads/processes is equal to num_maps
-	Map for wordcount will generate a key/value pair where key = unique word and value = # of times it is seen
-	Map will put its list of key/value pairs into shared memory for reduces threads/processes to use
-*/
-void map()
-{
-}
+
 /*
 	There will be num_reduces of threads/processes running.
 	Reduce will take all the key/value pairs of a unique word and sum it
@@ -263,8 +264,8 @@ int main (int argc, char* argv[]) {
     strcpy(inFile, argv[10]);
     strcpy(outFile, argv[12]);
     
-    node* head = inputreader(inFile,wordcount);
-    head = mapper(head,wordcount,procs,maps);
+    node* head = inputreader(inFile,type);
+    head = mapper(head,type,impl,maps);
     
     return 0;
 
