@@ -36,48 +36,52 @@ node* inputreader(char* filename, int wordcount)
 	FILE* fp = fopen(filename, "r");
 	char word[250];
 	// counting words
-	if (fp == NULL)
-		printf("FAIL FAIL FAIL\n");
 	node* head = NULL;
-	node* tail = NULL;
 	node* next = NULL;
-	int val;
+	node* p = NULL;
+	int val = 0;
 	if(wordcount == 0){
 		while(fscanf(fp,"%s",word)==1){
-			if(head = NULL){
+			if(head == NULL){
 				head = (node*)malloc(sizeof(node));
-				head->word = word;
-				tail = head;
+				head->word = strdup(word);
 			}
 			else{
+				p = head;
+				while (p->next != NULL)
+				{
+					p = p->next;
+				}
 				next = (node*)malloc(sizeof(node));
-				next->word = word;
-				//this line seems odd
-				//tail->next = next;
-				tail = next;
+				next->word = strdup(word);
+				p->next = next;
 			}
-			//printf("STARTING %d\n", total);
 			total++;
 		}
 	}
 	//not counting words
 	else{
-		while(fscanf(fp,"%d",val)==1){
-			if(head = NULL){
+		while(fscanf(fp,"%d",&val)==1){
+			
+			if(head == NULL){
 				head = (node*)malloc(sizeof(node));
 				head->val = val;
-				tail = head;
 			}
 			else{
+				p = head;
+				while (p->next != NULL)
+				{
+					p = p->next;
+				}
 				next = (node*)malloc(sizeof(node));
 				next->val = val;
-				tail->next = next;
-				tail = next;
+				p->next = next;
 			}
+			
 			total++;
 		}
 	}
-	//fclose(fp);
+	fclose(fp);
 	return head;
 }
 /*
@@ -236,6 +240,19 @@ void validflags(int argc, char* argv[])
 	}
 }
 */
+void print(node *head)
+{
+	node* curr = head;
+	if (curr == NULL)
+		printf("NO HEAD\n");
+	
+	while (curr != NULL)
+	{
+		printf("%d \n", curr->val);
+		curr = curr->next;
+	}
+	
+}
 int main (int argc, char* argv[]) {
 	//validflags(argc, argv);
 	//inputreader();
@@ -265,6 +282,7 @@ int main (int argc, char* argv[]) {
     strcpy(outFile, argv[12]);
     
     node* head = inputreader(inFile,type);
+ 	//print(head);
     head = mapper(head,type,impl,maps);
     
     return 0;
