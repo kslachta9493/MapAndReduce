@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include "map.h"
 
 int app = 0;
 int impl = 0;
@@ -13,28 +14,127 @@ int num_reduces = 2;
 char* inputfile = NULL;
 char* outfile = NULL;
 int total= 0;
-typedef struct node {
-    int val;
-    char* word;
-    int count;
-    struct node * next;
-}node;
+
 /*
 	Map will be called once per pthread/process where # of pthreads/processes is equal to num_maps
 	Map for wordcount will generate a key/value pair where key = unique word and value = # of times it is seen
 	Map will put its list of key/value pairs into shared memory for reduces threads/processes to use
 */
-void map(node* head,int wordcount)
+void swap(node* a, node* b) 
+{ 
+    int temp = a->val; 
+    a->val = b->val; 
+    b->val = temp; 
+} 
+void bubblesort(node* head, int size) 
+{ 
+    int swapped, i; 
+    node* temp; 
+    node* tail = NULL; 
+  
+    do
+    { 
+        swapped = 0; 
+        temp = head; 
+  
+        while (temp->next != tail) 
+        { 
+            if (temp->val > temp->next->val) 
+            {  
+                swap(temp, temp->next); 
+                swapped = 1; 
+            } 
+            temp = temp->next; 
+        } 
+        tail = temp; 
+    } 
+    while (swapped); 
+} 
+
+void *mapint(void *args)
 {
+	//must sort the list on integers it is given
+	mapargs *temp = (mapargs *) args;
+	int size = 0;
+	int type = 0;
+	node* curr;
+	node* head;
+	size = temp->size;
+	curr = temp->head;
+	head = temp->head;
+	FILE* fp;
+	fp = temp->fp;
+	bubblesort(curr, size);
+	int i = 0;	
+	for (i = 0; i < size; i++)
+	{
+		fprintf(fp, "%d \n", curr->val);
+		curr = curr->next;
+		fflush(fp);
+	}
+}
+void *mapword(void *args)
+{
+	mapargs *temp = (mapargs *) args;
+	int size = 0;
+	int type = 0;
+	node* curr;
+	size = temp->size;
+	curr = temp->head;
+	FILE* fp;
+	fp = temp->fp;
+	kv* table;
+	int i = 0;
+	int j = 0;
+	table = (kv *) malloc (sizeof(kv) * size);
+	for (i = 0; i < size; i++)
+	{
+		(table + i)->value = 1;
+	}
+	if (curr == NULL)
+		printf("NO HEAD\n");
+	int count = 0;
+	int found = 0;
+	printf("Size is %d\n", size);
+	for (i = 0; i < size; i++)
+	{
+
+		for (j = 0; j < count; j++)
+		{
+			if (strcmp((table + j)->key, curr->word) == 0)
+			{
+				found = 1;
+				(table + j)->value++;
+			}
+		}
+		if (found == 0)
+		{
+			(table + count)->key = strdup(curr->word);
+			(table + count)->value = 1;
+			count++;
+		}
+		found = 0;
+		curr = curr->next;
+	}
+	printf("Count is %d\n", count);
+	for (i = 0; i < count; i++)
+	{
+			fprintf(fp, "%s, %d \n", (table + i)->key, (table + i)->value);
+		fflush(fp);
+	}
+
+	fclose(fp);
 }
 
 /*
 	Inputreader should take the inputfile and break it into similar size chunks for use in the parallel map functions
 */
+//" .,;:!-"
 node* inputreader(char* filename, int wordcount)
 {
 	FILE* fp = fopen(filename, "r");
 	char word[250];
+	char *temp;
 	// counting words
 	node* head = NULL;
 	node* next = NULL;
@@ -42,9 +142,10 @@ node* inputreader(char* filename, int wordcount)
 	int val = 0;
 	if(wordcount == 0){
 		while(fscanf(fp,"%s",word)==1){
+			temp = strtok(word, " .,;:!-");
 			if(head == NULL){
 				head = (node*)malloc(sizeof(node));
-				head->word = strdup(word);
+				head->word = strdup(temp);
 			}
 			else{
 				p = head;
@@ -53,7 +154,7 @@ node* inputreader(char* filename, int wordcount)
 					p = p->next;
 				}
 				next = (node*)malloc(sizeof(node));
-				next->word = strdup(word);
+				next->word = strdup(temp);
 				p->next = next;
 			}
 			total++;
@@ -87,7 +188,7 @@ node* inputreader(char* filename, int wordcount)
 /*
 Mapper splits the code and either sends it into map threads or processes
 */
-node* mapper(node* head, int wordcount, int procs,int maps){
+node* mapper(node* head, int wordcount, int procs,int maps, int reduces){
 	node*curr = head;
 	node*next;
 	int i = 1;
@@ -100,9 +201,13 @@ node* mapper(node* head, int wordcount, int procs,int maps){
 	else{
 		size = floor(s);
 	}
-	int currmap = 1;
+	int currmap = 0;
 	int pid;
 	int pid_t = pid;
+	FILE* fd;
+	FILE* fp;
+	fd = fopen("123.txt", "w");
+	fp = fopen("321.txt", "w");
 	pthread_t tid; 
 	//processes
 	if(procs == 0){
@@ -115,7 +220,7 @@ node* mapper(node* head, int wordcount, int procs,int maps){
 				curr->next = NULL;
 				pid = fork();
 				if(pid == 0){
-					map(head,wordcount);
+					//map(head,wordcount);
 				}
 				else{
 					head = next;
@@ -129,12 +234,15 @@ node* mapper(node* head, int wordcount, int procs,int maps){
 		}
 		pid = fork();
 		if(pid == 0){
-			map(head,wordcount);
+			//map(head,wordcount);
 		}
 		//JOIN PROCESSES
 	}
 	//threads
 	else{
+		pthread_t *threads;
+		threads = (pthread_t *) malloc (maps * sizeof(pthread_t));
+		/*
 		while(curr != NULL)	{
 			if(currmap == maps){
 				break;
@@ -151,6 +259,50 @@ node* mapper(node* head, int wordcount, int procs,int maps){
 			i++;
 			curr = curr->next;
 		}
+		*/
+		int i;
+		mapargs* ma = (mapargs *) malloc (sizeof(mapargs) * maps);
+		while (currmap < maps)
+		{
+			printf("About to do thread create\n");
+			curr = head;
+			if (currmap != 0)
+			{
+				for (i = 0; i < size; i++)
+				{
+					curr = curr->next;
+				}
+				(ma + currmap)->fp = fp;
+			}
+			else
+			{
+				(ma + currmap)->fp = fd;
+			}
+			(ma + currmap)->size = size;
+			(ma + currmap)->head = curr;
+			if (wordcount == 0)
+				pthread_create(&threads[currmap], NULL, mapword, (void *) (ma + currmap));
+			else
+				pthread_create(&threads[currmap], NULL, mapint, (void *) (ma + currmap));
+				
+
+			currmap++;
+		}
+		//wait for threads
+		for (i = 0; i < maps; i++)
+		{
+			pthread_join(threads[i], NULL);
+		}
+		/*
+		currmaps = 0
+		while (currmaps < reduces)
+		{
+			if (type == 0)
+				pthread_create(&threads[currmap], NULL, reduceword, (void *) (ma + currmap));
+			else
+				pthread_create(&threads[currmap], NULL, reduceint, (void *) (ma + currmap));
+		}
+		*/
 		//CREATE THREAD send head
 		//JOIN THREAD
 	}
@@ -242,15 +394,18 @@ void validflags(int argc, char* argv[])
 */
 void print(node *head)
 {
+	FILE* fd = fopen("test.txt", "w");
 	node* curr = head;
 	if (curr == NULL)
 		printf("NO HEAD\n");
 	
 	while (curr != NULL)
 	{
-		printf("%d \n", curr->val);
+		fprintf(fd, "%s \n", curr->word);
 		curr = curr->next;
 	}
+	fflush(fd);
+	fclose(fd);
 	
 }
 int main (int argc, char* argv[]) {
@@ -282,8 +437,8 @@ int main (int argc, char* argv[]) {
     strcpy(outFile, argv[12]);
     
     node* head = inputreader(inFile,type);
- 	//print(head);
-    head = mapper(head,type,impl,maps);
+
+    head = mapper(head,type,impl,maps,reduces);
     
     return 0;
 
