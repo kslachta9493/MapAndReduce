@@ -58,10 +58,8 @@ void *mapint(void *args)
 	int size = 0;
 	int type = 0;
 	node* curr;
-	node* head;
 	size = temp->size;
 	curr = temp->head;
-	head = temp->head;
 	FILE* fp;
 	fp = temp->fp;
 	bubblesort(curr, size);
@@ -211,6 +209,52 @@ node* mapper(node* head, int wordcount, int procs,int maps, int reduces){
 	pthread_t tid; 
 	//processes
 	if(procs == 0){
+		int pids[maps];
+		int ischild = -1;
+		mapargs* ma = (mapargs *) malloc (sizeof(mapargs));
+		for (i = 0; i < maps; i++)
+		{
+			printf("Created thread %d\n", i);
+			pids[i] = fork();
+			if (pids[i] == 0)
+			{
+				if (i != 0)
+				{
+					for (i = 0; i < size; i++)
+					{
+						curr = curr->next;
+					}
+					ma->fp = fp;
+				}
+				else
+				{
+					ma->fp = fd;
+				}
+					//ischild = pids[i];
+				ma->size = size;
+				ma->head = curr;
+				ischild = 1;
+				if (wordcount == 0)
+					mapword((void *) ma);
+				else
+					mapint((void *) ma);
+				break;
+			}
+			else
+			{
+				ischild = 0;
+			}
+		}
+		if (ischild == 0)
+		{
+			printf("wait started\n");
+			for (i = 0; i < maps; i++)
+			{
+				int test = waitpid(pids[i], NULL, WUNTRACED);
+			}
+			printf("wait ended\n");
+		}
+		/*
 		while(curr != NULL)	{
 			if(currmap == maps){
 				break;
@@ -236,6 +280,7 @@ node* mapper(node* head, int wordcount, int procs,int maps, int reduces){
 		if(pid == 0){
 			//map(head,wordcount);
 		}
+		*/
 		//JOIN PROCESSES
 	}
 	//threads
