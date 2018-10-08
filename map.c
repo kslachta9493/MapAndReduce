@@ -20,41 +20,72 @@ int total= 0;
 	Map for wordcount will generate a key/value pair where key = unique word and value = # of times it is seen
 	Map will put its list of key/value pairs into shared memory for reduces threads/processes to use
 */
-void swap(node* a, node* b) 
-{ 
-    int temp = a->val; 
-    a->val = b->val; 
-    b->val = temp; 
-} 
-void bubblesort(node* head, int size) 
-{ 
-    int swapped, i; 
-    node* temp; 
-    node* tail = NULL; 
-  
-    do
-    { 
-        swapped = 0; 
-        temp = head; 
-  
-        while (temp->next != tail) 
-        { 
-            if (temp->val > temp->next->val) 
-            {  
-                swap(temp, temp->next); 
-                swapped = 1; 
-            } 
-            temp = temp->next; 
-        } 
-        tail = temp; 
-    } 
-    while (swapped); 
-} 
+
+/*
+	Merge sort implementation from geeksforgeeks.com
+*/
+void split(node* source, node** frontRef, node** backRef)
+{
+	node* fast;
+	node* slow;
+
+	slow = source;
+	fast = source->next;
+	
+	while (fast != NULL)
+	{
+		fast = fast->next;
+		if (fast != NULL)
+		{
+			slow = slow->next;
+			fast = fast->next;
+		}
+	}
+
+	*frontRef = source;
+	*backRef = slow->next;
+	slow->next = NULL;
+}
+node* merge(node *a, node* b)
+{
+	node *result = NULL;
+	if (a == NULL)
+		return b;
+	else if (b == NULL)
+		return a;
+
+	if (a->val <= b->val)
+	{
+		result = a;
+		result->next = merge(a->next, b);
+	}
+	else
+	{
+		result = b;
+		result->next = merge(a, b->next);
+	}
+	return result;
+}
+void mergeSort(node** headRef)
+{
+	node *head = *headRef;
+	node* l;
+	node* r;
+	if (head == NULL || head->next == NULL)
+	{
+		return;
+	}
+	split(head, &l, &r);
+	mergeSort(&l);
+	mergeSort(&r);
+	*headRef = merge(l,r);
+}
 
 void *mapint(void *args)
 {
 	//must sort the list on integers it is given
 	mapargs *temp = (mapargs *) args;
+	int i;
 	int size = 0;
 	int type = 0;
 	node* curr;
@@ -62,14 +93,39 @@ void *mapint(void *args)
 	curr = temp->head;
 	FILE* fp;
 	fp = temp->fp;
-	bubblesort(curr, size);
-	int i = 0;	
+	node *head = NULL;
+	node *next = NULL;
+	node *p = NULL;
 	for (i = 0; i < size; i++)
 	{
-		fprintf(fp, "%d \n", curr->val);
+		if (head == NULL)
+		{
+			head = (node *) malloc (sizeof(node));
+			head->val = curr->val;
+			head->next = NULL;
+		}
+		else
+		{
+			p = head;
+			while (p->next != NULL)
+			{
+				p = p->next;
+			}
+			next = (node *) malloc (sizeof(node));
+			next->next = NULL;
+			next->val = curr->val;
+			p->next = next;
+		}
 		curr = curr->next;
+	}
+	mergeSort(&head);
+	for (i = 0; i < size; i++)
+	{
+		fprintf(fp, "%d \n", head->val);
+		head = head->next;
 		fflush(fp);
 	}
+	fclose(fp);
 }
 void tester(node *head)
 {
@@ -85,7 +141,8 @@ void tester(node *head)
         { 
             if (temp->val == temp->next->val) 
             {  
-                swap(temp, temp->next); 
+                //swap(temp, temp->next); 
+		printf("Duplicate found %d\n", temp->val);
                 swapped = 1; 
             } 
             temp = temp->next; 
@@ -200,9 +257,20 @@ node* inputreader(char* filename, int wordcount)
 				next->val = val;
 				p->next = next;
 			}
-			
 			total++;
 		}
+			/*
+			FILE* fd;
+			fd = fopen("out.txt", "w");
+			node* temp = head;
+			while (temp->next != NULL)
+			{
+				fprintf(fd, "%d\n", temp->val);
+				temp = temp->next;
+				fflush(fp);
+			}
+			fclose(fd);
+			*/
 	}
 	fclose(fp);
 	return head;
@@ -224,8 +292,6 @@ node* mapper(node* head, int wordcount, int procs,int maps, int reduces){
 		size = floor(s);
 	}
 	int currmap = 0;
-	int pid;
-	int pid_t = pid;
 	FILE* fd;
 	FILE* fp;
 	fd = fopen("123.txt", "w");
@@ -235,14 +301,14 @@ node* mapper(node* head, int wordcount, int procs,int maps, int reduces){
 	if(procs == 0){
 		int pids[maps];
 		int ischild = -1;
-		mapargs* ma = (mapargs *) malloc (sizeof(mapargs));
 		for (i = 0; i < maps; i++)
 		{
 			printf("Created thread %d\n", i);
 			pids[i] = fork();
+			mapargs* ma = (mapargs *) malloc (sizeof(mapargs));
 			if (pids[i] == 0)
 			{
-				if (i != 0)
+				if (i > 0)
 				{
 					for (i = 0; i < size; i++)
 					{
@@ -463,7 +529,6 @@ int main (int argc, char* argv[]) {
     node* head = inputreader(inFile,type);
 
     head = mapper(head,type,impl,maps,reduces);
-    
     return 0;
 
 }
