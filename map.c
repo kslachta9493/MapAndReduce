@@ -71,6 +71,30 @@ void *mapint(void *args)
 		fflush(fp);
 	}
 }
+void tester(node *head)
+{
+    int swapped, i; 
+    node* temp; 
+    node* tail = NULL; 
+    do
+    { 
+        swapped = 0; 
+        temp = head; 
+  
+        while (temp->next != tail) 
+        { 
+            if (temp->val == temp->next->val) 
+            {  
+                swap(temp, temp->next); 
+                swapped = 1; 
+            } 
+            temp = temp->next; 
+        } 
+        tail = temp; 
+    } 
+    while (swapped); 
+	
+}
 void *mapword(void *args)
 {
 	mapargs *temp = (mapargs *) args;
@@ -254,57 +278,12 @@ node* mapper(node* head, int wordcount, int procs,int maps, int reduces){
 			}
 			printf("wait ended\n");
 		}
-		/*
-		while(curr != NULL)	{
-			if(currmap == maps){
-				break;
-			}
-			if(size%i==0){
-				next = curr->next;
-				curr->next = NULL;
-				pid = fork();
-				if(pid == 0){
-					//map(head,wordcount);
-				}
-				else{
-					head = next;
-					curr = head;
-				}
-				
-			}
-			
-			i++;
-			curr = curr->next;
-		}
-		pid = fork();
-		if(pid == 0){
-			//map(head,wordcount);
-		}
-		*/
-		//JOIN PROCESSES
+
 	}
 	//threads
 	else{
 		pthread_t *threads;
 		threads = (pthread_t *) malloc (maps * sizeof(pthread_t));
-		/*
-		while(curr != NULL)	{
-			if(currmap == maps){
-				break;
-			}
-			if(size%i==0){
-				next = curr->next;
-				curr->next = NULL;
-				//CREATE THREAD send head
-				head = next;
-				curr = head;
-			
-			}
-				
-			i++;
-			curr = curr->next;
-		}
-		*/
 		int i;
 		mapargs* ma = (mapargs *) malloc (sizeof(mapargs) * maps);
 		while (currmap < maps)
