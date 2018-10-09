@@ -46,27 +46,42 @@ void split(node* source, node** frontRef, node** backRef)
 	*backRef = slow->next;
 	slow->next = NULL;
 }
-node* merge(node *a, node* b)
+node* merge(node *a, node* b, int type)
 {
 	node *result = NULL;
 	if (a == NULL)
 		return b;
 	else if (b == NULL)
 		return a;
-
-	if (a->val <= b->val)
+	if (type == 0)
 	{
-		result = a;
-		result->next = merge(a->next, b);
+		if (strcmp(a->word, b->word) <= 0)
+		{
+			result = a;
+			result->next = merge(a->next, b, type);
+		}
+		else
+		{
+			result = b;
+			result->next = merge(a, b->next, type);
+		}
 	}
 	else
 	{
-		result = b;
-		result->next = merge(a, b->next);
+		if (a->val <= b->val)
+		{
+			result = a;
+			result->next = merge(a->next, b, type);
+		}
+		else
+		{
+			result = b;
+			result->next = merge(a, b->next, type);
+		}
 	}
 	return result;
 }
-void mergeSort(node** headRef)
+void mergeSort(node** headRef, int type)
 {
 	node *head = *headRef;
 	node* l;
@@ -76,9 +91,9 @@ void mergeSort(node** headRef)
 		return;
 	}
 	split(head, &l, &r);
-	mergeSort(&l);
-	mergeSort(&r);
-	*headRef = merge(l,r);
+	mergeSort(&l, type);
+	mergeSort(&r, type);
+	*headRef = merge(l,r, type);
 }
 
 void *mapint(void *args)
@@ -118,7 +133,7 @@ void *mapint(void *args)
 		}
 		curr = curr->next;
 	}
-	mergeSort(&head);
+	mergeSort(&head, 1);
 	for (i = 0; i < size; i++)
 	{
 		fprintf(fp, "%d \n", head->val);
@@ -162,46 +177,83 @@ void *mapword(void *args)
 	curr = temp->head;
 	FILE* fp;
 	fp = temp->fp;
-	kv* table;
+	node* table;
 	int i = 0;
 	int j = 0;
-	table = (kv *) malloc (sizeof(kv) * size);
+	//table = (node *) malloc (sizeof(node));
+	node *head = NULL;
+	node *next = NULL;
+	node *p = NULL;
 	for (i = 0; i < size; i++)
 	{
-		(table + i)->value = 1;
+		if (head == NULL)
+		{
+			head = (node *) malloc (sizeof(node));
+			head->word = strdup(curr->word);
+			head->next = NULL;
+		}
+		else
+		{
+			p = head;
+			while (p->next != NULL)
+			{
+				p = p->next;
+			}
+			next = (node *) malloc (sizeof(node));
+			next->next = NULL;
+			next->word = strdup(curr->word);
+			p->next = next;
+		}
+		curr = curr->next;
 	}
+	curr = head;
 	if (curr == NULL)
 		printf("NO HEAD\n");
 	int count = 0;
 	int found = 0;
 	printf("Size is %d\n", size);
-	for (i = 0; i < size; i++)
+	next = (node *) malloc(sizeof(node));
+	next->next = NULL;
+	next->word = curr->word;
+	next->count = 1;
+	table = next;
+	curr = curr->next;
+	while (curr->next != NULL)
 	{
-
-		for (j = 0; j < count; j++)
+		p = table;
+		while (p->next != NULL)
 		{
-			if (strcmp((table + j)->key, curr->word) == 0)
+			if (strcmp(p->word, curr->word) == 0)
 			{
 				found = 1;
-				(table + j)->value++;
+				p->count++;
 			}
+			p = p->next;
 		}
+		
 		if (found == 0)
 		{
-			(table + count)->key = strdup(curr->word);
-			(table + count)->value = 1;
-			count++;
+			next = (node *) malloc(sizeof(node));
+			next->next = NULL;
+			next->word = curr->word;
+			next->count = 1;
+			printf("%s \n", next->word);
+			p->next = next;
 		}
+		
 		found = 0;
 		curr = curr->next;
 	}
+	
 	printf("Count is %d\n", count);
-	for (i = 0; i < count; i++)
+	mergeSort(&table, 0);
+	while (table->next != NULL)
 	{
-			fprintf(fp, "%s, %d \n", (table + i)->key, (table + i)->value);
+		fprintf(fp, "%s, %d \n", table->word, table->count);
+		table = table->next;
 		fflush(fp);
 	}
-
+	
 	fclose(fp);
 }
 
@@ -220,7 +272,12 @@ node* inputreader(char* filename, int wordcount)
 	node* p = NULL;
 	int val = 0;
 	if(wordcount == 0){
+		int i = 0;
 		while(fscanf(fp,"%s",word)==1){
+			for (i = 0; i < strlen(word); i++)
+			{
+				word[i] = tolower(word[i]);
+			}
 			temp = strtok(word, " .,;:!-");
 			if(head == NULL){
 				head = (node*)malloc(sizeof(node));

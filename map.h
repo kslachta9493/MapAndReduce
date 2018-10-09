@@ -17,5 +17,6 @@ typedef struct kv
 {
 	char *key;
 	int value;
+	struct kv * next;
 } kv;
 #endif
