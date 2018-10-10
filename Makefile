@@ -1,4 +1,4 @@
-CCFLAGS = -ggdb -lm -pthread -g
+CCFLAGS = -ggdb -lm -pthread -g -lrt
 
 all: map
 

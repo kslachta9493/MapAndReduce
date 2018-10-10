@@ -5,7 +5,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <sys/shm.h>
+#include <sys/stat.h>
+#include <sys/mman.h>
+#include <fcntl.h>
 #include "map.h"
+
 
 int app = 0;
 int impl = 0;
@@ -106,10 +111,10 @@ void *mapint(void *args)
 	node* curr;
 	size = temp->size;
 	curr = temp->head;
-	FILE* fp;
-	fp = temp->fp;
 	node *head = NULL;
 	node *next = NULL;
+	void* memptr;
+	memptr = temp->memptr;
 	node *p = NULL;
 	for (i = 0; i < size; i++)
 	{
@@ -134,13 +139,14 @@ void *mapint(void *args)
 		curr = curr->next;
 	}
 	mergeSort(&head, 1);
-	for (i = 0; i < size; i++)
+	while (head->next != NULL)
 	{
-		fprintf(fp, "%d \n", head->val);
+		
+		//fflush(fp);
+		sprintf(memptr, "%d\n", head->val);
+		memptr += sizeof(int);
 		head = head->next;
-		fflush(fp);
 	}
-	fclose(fp);
 }
 void tester(node *head)
 {
@@ -175,8 +181,6 @@ void *mapword(void *args)
 	node* curr;
 	size = temp->size;
 	curr = temp->head;
-	FILE* fp;
-	fp = temp->fp;
 	node* table;
 	int i = 0;
 	int j = 0;
@@ -237,7 +241,7 @@ void *mapword(void *args)
 			next->next = NULL;
 			next->word = curr->word;
 			next->count = 1;
-			printf("%s \n", next->word);
+			//printf("%s \n", next->word);
 			p->next = next;
 		}
 		
@@ -247,14 +251,35 @@ void *mapword(void *args)
 	
 	printf("Count is %d\n", count);
 	mergeSort(&table, 0);
+	void* memptr;
+	memptr = temp->memptr;
+	pthread_mutex_t lock = temp->lock;
+	//pthread_mutex_lock(&lock);
+	char str[5];
+	head = table;
 	while (table->next != NULL)
 	{
-		fprintf(fp, "%s, %d \n", table->word, table->count);
+		
+		//fflush(fp);
+		if (table->count > 9)
+		{
+			sprintf(memptr, "%s, %d\n", table->word, table->count);
+			memptr += strlen(table->word) + (sizeof(char) * 5);
+		}
+		else
+		{
+			sprintf(memptr, "%s, %d\n", table->word, table->count);
+			memptr += strlen(table->word) + (sizeof(char) * 4);
+		}
 		table = table->next;
-		fflush(fp);
 	}
-	
-	fclose(fp);
+	while (head->next != NULL)
+	{
+		p = head;
+		head = head->next;
+		free(p);
+	}
+	//pthread_mutex_unlock(&lock);
 }
 
 /*
@@ -316,26 +341,47 @@ node* inputreader(char* filename, int wordcount)
 			}
 			total++;
 		}
-			/*
-			FILE* fd;
-			fd = fopen("out.txt", "w");
-			node* temp = head;
-			while (temp->next != NULL)
-			{
-				fprintf(fd, "%d\n", temp->val);
-				temp = temp->next;
-				fflush(fp);
-			}
-			fclose(fd);
-			*/
 	}
 	fclose(fp);
 	return head;
 }
+void *reduceWord(void * args)
+{
+	printf("REDUCIND THIS BITCH\n\n");
+	redargs *temp = (redargs *) args;
+	node* p;
+	node** headRef;
+	headRef = temp->head;
+	node *head = *headRef;
+	int i;
+	int size = temp->size;
+	p = head->next;
+	printf("Starting at %s\n", head->word);
+	while (head->next != NULL)
+	{
+		//printf("comparing %s and %s\n", p->word, head->word);
+		if (strcmp(p->word, head->word) == 0)
+		{
+			//printf("combining %s and %s\n", p->word, head->word);
+			head->count += p->count;
+			head->next = p->next;
+			p = p->next;
+			size--;
+		} else if (head->next != NULL)
+		{
+			head = head->next;
+			p = p->next;
+		}
+	}
+}
+void *reduceInt()
+{
+}
+
 /*
 Mapper splits the code and either sends it into map threads or processes
 */
-node* mapper(node* head, int wordcount, int procs,int maps, int reduces){
+node* mapper(node* head, int wordcount, int procs,int maps, int reduces, FILE* outfile){
 	node*curr = head;
 	node*next;
 	int i = 1;
@@ -349,20 +395,34 @@ node* mapper(node* head, int wordcount, int procs,int maps, int reduces){
 		size = floor(s);
 	}
 	int currmap = 0;
-	FILE* fd;
-	FILE* fp;
-	fd = fopen("123.txt", "w");
-	fp = fopen("321.txt", "w");
+
+	//Shared memory vars
+	int memsize = 0;
+	int shm_fd;
+	void* memptr;
+	void* memtemp;
+
 	pthread_t tid; 
 	//processes
 	if(procs == 0){
 		int pids[maps];
+		int pidsr[reduces];
 		int ischild = -1;
+		int shm_fd;
+		shm_fd = shm_open("blocks", O_CREAT | O_RDWR, 0666);
+		if (wordcount == 0)
+			memsize = ((sizeof(char*) * total) + (sizeof(char) * 5));
+		else
+			memsize = sizeof(int) * total;
+		ftruncate(shm_fd, memsize);
+		memptr = mmap(0, memsize, PROT_WRITE, MAP_SHARED, shm_fd, 0);
+		memtemp = memptr;
+		mapargs* ma = (mapargs *) malloc (sizeof(mapargs));
 		for (i = 0; i < maps; i++)
 		{
 			printf("Created thread %d\n", i);
+			ma->memptr = memptr + (size * i);
 			pids[i] = fork();
-			mapargs* ma = (mapargs *) malloc (sizeof(mapargs));
 			if (pids[i] == 0)
 			{
 				if (i > 0)
@@ -371,13 +431,7 @@ node* mapper(node* head, int wordcount, int procs,int maps, int reduces){
 					{
 						curr = curr->next;
 					}
-					ma->fp = fp;
 				}
-				else
-				{
-					ma->fp = fd;
-				}
-					//ischild = pids[i];
 				ma->size = size;
 				ma->head = curr;
 				ischild = 1;
@@ -400,37 +454,256 @@ node* mapper(node* head, int wordcount, int procs,int maps, int reduces){
 				int test = waitpid(pids[i], NULL, WUNTRACED);
 			}
 			printf("wait ended\n");
+			shm_fd = shm_open("block", O_RDONLY, 0666);
+			memptr = mmap(0, memsize, PROT_READ, MAP_SHARED, shm_fd, 0);
+			int testmem = 0;
+			memtemp = memptr;
+			char input[memsize];
+			char *splitint;
+			char *splitword;
+			node *p;
+			curr = NULL;
+			if (wordcount == 0)
+			{
+				while (memtemp < (memptr + memsize))
+				{
+					sprintf(input, "%s", (char*)memtemp);
+					//printf("%s\n", input);
+					i++;
+			
+					splitword = strtok(input, " ,");
+					splitint = strtok(NULL, " \n");
+					if (curr == NULL)
+					{
+						curr = (node*) malloc (sizeof(node));
+						curr->word = strdup(splitword);
+						curr->count = atoi(splitint);
+						curr->next = NULL;
+						p = curr;
+					}
+					while (splitword != NULL || splitint != NULL)
+					{
+						while (p->next != NULL)
+						{
+							p = p->next;
+						}
+				
+						splitword = strtok(NULL, " ,\n");
+						splitint = strtok(NULL, " ,\n");
+						if (splitword == NULL || splitint == NULL)
+						{
+							printf("Null found %s %s\n", splitword, splitint);
+							break;
+						} else
+						{
+							//printf("%s, %d\n", splitword, atoi(splitint));
+							next = (node*) malloc (sizeof(node));
+							next->word = strdup(splitword);
+							next->count = atoi(splitint);
+							p->next = next;
+						}
+					}			
+					memtemp = memtemp + (size * sizeof(char*));
+				}
+				head = curr;
+				while (curr->next != NULL)
+				{
+					if (curr->word == NULL)
+					{
+						p->next = curr->next;
+					}
+					//fprintf(fpp, "%s, %d\n", curr->word, curr->count);
+					//fflush(fpp);
+					p = curr;
+					curr = curr->next;
+				}
+				mergeSort(&head, 0);
+			} else
+			{
+			
+				while (memtemp < (memptr + memsize))
+				{
+					sprintf(input, "%s", (char*)memtemp);
+					//printf("%s\n", input);
+					i++;
+			
+					splitint = strtok(input, " \n");
+					if (curr == NULL)
+					{
+						curr = (node*) malloc (sizeof(node));
+						curr->val = atoi(splitint);
+						curr->next = NULL;
+						p = curr;
+					}
+					while (splitint != NULL)
+					{
+						while (p->next != NULL)
+						{
+							p = p->next;
+						}
+				
+						splitint = strtok(NULL, " \n");
+						if (splitint == NULL)
+						{
+							printf("Null found %s %s\n", splitword, splitint);
+							break;
+						} else
+						{
+							//printf("%s, %d\n", splitword, atoi(splitint));
+							next = (node*) malloc (sizeof(node));
+							next->val = atoi(splitint);
+							p->next = next;
+						}
+					}
+			
+					memtemp = memtemp + (size * sizeof(char*));
+				}
+				head = curr;
+				while (curr->next != NULL)
+				{
+					if (curr->word == NULL)
+					{
+						p->next = curr->next;
+					}
+					//fprintf(fpp, "%s, %d\n", curr->word, curr->count);
+					//fflush(fpp);
+					p = curr;
+					curr = curr->next;
+				}
+				mergeSort(&head, 1);
+			}
+			currmap = 0;
+			redargs *ra;
+			ra = (redargs *) malloc (sizeof(redargs));
+			int count = 0;
+			p = head;
+			while (p->next != NULL)
+			{
+				p = p->next;
+				count++;
+			}
+			p = head;
+			i = 0;
+			int ischild = -1;
+			while (currmap < reduces)
+			{
+				if(ceil(count)*(reduces-1)<total){
+					size = ceil(count);
+				}
+				else{
+					size = floor(count);
+				}
+				ra->size = count;
+				if (currmap != 0)
+				{
+					for (i = 0; i < count / reduces; i++)
+					{
+						head = head->next;
+					}
+					ra->head = &head;
+				} else
+				{
+					next = p;
+					ra->head = &next;
+				}
+
+				printf("HEAD IS HERE %s\n", head->word);
+				pidsr[i] = fork();
+				if (pidsr[i] == 0)
+				{
+					ischild = 0;
+					if (wordcount == 0)
+					{
+						reduceWord((void*) ra);
+					}
+					else
+					{
+						reduceInt((void*) ra);
+					}
+					break;
+				}
+				else
+				{
+					//am parent
+					int j = 0;
+					ischild = 1;
+					for (j = 0; j < reduces; j++)
+					{
+						int test = waitpid(pidsr[j], NULL, WUNTRACED);
+					}
+				}
+				i++;
+				currmap++;
+			}
+			if (wordcount == 0 && ischild == 1)
+			{
+				while (p->next != NULL)
+				{
+
+					fprintf(outfile, "%s %d\n", p->word, p->count);
+					fflush(outfile);
+					p = p->next;
+				}
+				fclose(outfile);
+			} else if (wordcount == 1 && ischild == 1)
+			{
+				while (p->next != NULL)
+				{
+
+					fprintf(outfile, "%d\n", p->val);
+					fflush(outfile);
+					p = p->next;
+				}
+				fclose(outfile);
+			}
 		}
 
 	}
 	//threads
 	else{
 		pthread_t *threads;
+		pthread_t *threadsred;
 		threads = (pthread_t *) malloc (maps * sizeof(pthread_t));
+		threadsred = (pthread_t *) malloc (reduces * sizeof(pthread_t));
 		int i;
-		mapargs* ma = (mapargs *) malloc (sizeof(mapargs) * maps);
+		mapargs* ma = (mapargs *) malloc (sizeof(mapargs) * (maps + reduces));
+		shm_fd = shm_open("block", O_CREAT | O_RDWR, 0666);
+		if (wordcount == 0)
+			memsize = ((sizeof(char*) * total) + (sizeof(char) * 5));
+		else
+			memsize = sizeof(int) * total;
+		ftruncate(shm_fd, memsize);
+		memptr = mmap(0, memsize, PROT_WRITE, MAP_SHARED, shm_fd, 0);
+		void* memtemp;
+		memtemp = memptr;
+		pthread_mutex_t lock;
+		pthread_mutex_init(&lock, NULL);
+			curr = head;
 		while (currmap < maps)
 		{
 			printf("About to do thread create\n");
-			curr = head;
 			if (currmap != 0)
 			{
 				for (i = 0; i < size; i++)
 				{
 					curr = curr->next;
 				}
-				(ma + currmap)->fp = fp;
+			}
+
+			(ma + currmap)->size = size;
+			(ma + currmap)->head = curr;
+			(ma + currmap)->memptr = memtemp;
+			(ma + currmap)->lock = lock;
+			memtemp = memtemp + (size * sizeof(char*));
+			if (wordcount == 0)
+			{
+				printf("first word %s\n", (ma+currmap)->head->word);
+				pthread_create(&threads[currmap], NULL, mapword, (void *) (ma + currmap));
 			}
 			else
 			{
-				(ma + currmap)->fp = fd;
-			}
-			(ma + currmap)->size = size;
-			(ma + currmap)->head = curr;
-			if (wordcount == 0)
-				pthread_create(&threads[currmap], NULL, mapword, (void *) (ma + currmap));
-			else
 				pthread_create(&threads[currmap], NULL, mapint, (void *) (ma + currmap));
+			}
 				
 
 			currmap++;
@@ -440,18 +713,217 @@ node* mapper(node* head, int wordcount, int procs,int maps, int reduces){
 		{
 			pthread_join(threads[i], NULL);
 		}
-		/*
-		currmaps = 0
-		while (currmaps < reduces)
+		shm_fd = shm_open("block", O_RDONLY, 0666);
+		memptr = mmap(0, memsize, PROT_READ, MAP_SHARED, shm_fd, 0);
+		int testmem = 0;
+		memtemp = memptr;
+		FILE* fpp;
+		fpp = fopen("out.txt", "w");
+		char input[memsize];
+		char* splitword;
+		char* splitint;
+		curr = NULL;
+		node* p;
+		i = 0;
+		int j = 0;
+		int length = 0;
+		if (wordcount == 0)
 		{
-			if (type == 0)
-				pthread_create(&threads[currmap], NULL, reduceword, (void *) (ma + currmap));
-			else
-				pthread_create(&threads[currmap], NULL, reduceint, (void *) (ma + currmap));
+			while (memtemp < (memptr + memsize))
+			{
+				sprintf(input, "%s", (char*)memtemp);
+				//printf("%s\n", input);
+				i++;
+			
+				splitword = strtok(input, " ,");
+				splitint = strtok(NULL, " \n");
+				if (curr == NULL)
+				{
+					curr = (node*) malloc (sizeof(node));
+					curr->word = strdup(splitword);
+					curr->count = atoi(splitint);
+					curr->next = NULL;
+					p = curr;
+				}
+				while (splitword != NULL || splitint != NULL)
+				{
+					while (p->next != NULL)
+					{
+						p = p->next;
+					}
+				
+					splitword = strtok(NULL, " ,\n");
+					splitint = strtok(NULL, " ,\n");
+					if (j < 4)
+					{
+						printf("%s, %d %d\n", splitword, atoi(splitint), j);
+					}
+					j++;
+					if (splitword == NULL || splitint == NULL)
+					{
+						printf("Null found %s %s\n", splitword, splitint);
+						break;
+					} else
+					{
+						//printf("%s, %d\n", splitword, atoi(splitint));
+						next = (node*) malloc (sizeof(node));
+						next->word = strdup(splitword);
+						next->count = atoi(splitint);
+						p->next = next;
+					}
+				}
+				printf("%d %d %d\n", memtemp, memsize, memptr);
+			
+				memtemp = memtemp + (size * sizeof(char*));
+				//fprintf(fpp, "%s", input);
+				fflush(fpp);
+			}
+			head = curr;
+			while (curr->next != NULL)
+			{
+				if (curr->word == NULL)
+				{
+					p->next = curr->next;
+				}
+				//fprintf(fpp, "%s, %d\n", curr->word, curr->count);
+				//fflush(fpp);
+				p = curr;
+				curr = curr->next;
+			}
+			mergeSort(&head, 0);
+		}
+		else
+		{
+			
+			while (memtemp < (memptr + memsize))
+			{
+				sprintf(input, "%s", (char*)memtemp);
+				//printf("%s\n", input);
+				i++;
+			
+				splitint = strtok(input, " \n");
+				if (curr == NULL)
+				{
+					curr = (node*) malloc (sizeof(node));
+					curr->val = atoi(splitint);
+					curr->next = NULL;
+					p = curr;
+				}
+				while (splitint != NULL)
+				{
+					while (p->next != NULL)
+					{
+						p = p->next;
+					}
+				
+					splitint = strtok(NULL, " \n");
+					if (splitint == NULL)
+					{
+						printf("Null found %s %s\n", splitword, splitint);
+						break;
+					} else
+					{
+						//printf("%s, %d\n", splitword, atoi(splitint));
+						next = (node*) malloc (sizeof(node));
+						next->val = atoi(splitint);
+						p->next = next;
+					}
+				}
+			
+				memtemp = memtemp + (size * sizeof(char*));
+			}
+			head = curr;
+			while (curr->next != NULL)
+			{
+				if (curr->word == NULL)
+				{
+					p->next = curr->next;
+				}
+				//fprintf(fpp, "%s, %d\n", curr->word, curr->count);
+				//fflush(fpp);
+				p = curr;
+				curr = curr->next;
+			}
+			mergeSort(&head, 1);
+			
+		}
+
+		/*
+		while (head->next != NULL)
+		{
+
+			fprintf(fpp, "%s, %d\n", head->word, head->count);
+			fflush(fpp);
+			head = head->next;
 		}
 		*/
-		//CREATE THREAD send head
-		//JOIN THREAD
+		
+		currmap = 0;
+		redargs *ra;
+		ra = (redargs *) malloc (sizeof(redargs) * reduces);
+		int count = 0;
+		p = head;
+		while (p->next != NULL)
+		{
+			p = p->next;
+			count++;
+		}
+		p = head;
+		while (currmap < reduces)
+		{
+			if(ceil(count)*(reduces-1)<total){
+				size = ceil(count);
+			}
+			else{
+				size = floor(count);
+			}
+			(ra + currmap)->size = count;
+			if (currmap != 0)
+			{
+				for (i = 0; i < count / reduces; i++)
+				{
+					head = head->next;
+				}
+				(ra + currmap)->head = &head;
+			} else
+			{
+				next = p;
+				(ra + currmap)->head = &next;
+			}
+
+			printf("HEAD IS HERE %s\n", head->word);
+			if (wordcount == 0)
+				pthread_create(&threadsred[currmap], NULL, reduceWord, (void *) (ra + currmap));
+			else
+				pthread_create(&threadsred[currmap], NULL, reduceInt, NULL);
+
+			currmap++;
+		}
+		for (i = 0; i < reduces; i++)
+		{
+			pthread_join(threadsred[i], NULL);
+		}
+		if (wordcount == 0)
+		{
+			while (p->next != NULL)
+			{
+
+				fprintf(outfile, "%s %d\n", p->word, p->count);
+				fflush(outfile);
+				p = p->next;
+			}
+		} else
+		{
+			while (p->next != NULL)
+			{
+
+				fprintf(outfile, "%d\n", p->val);
+				fflush(outfile);
+				p = p->next;
+			}
+		}
+		fclose(outfile);
+		
 	}
 }
 
@@ -468,77 +940,7 @@ node* mapper(node* head, int wordcount, int procs,int maps, int reduces){
 	Reduced:
 		out, 8
 */
-void reduce()
-{
-}
 
-/*
-
-dont need this at least according to my TA. He said they wont test us on the inputs
-
-
-void validflags(int argc, char* argv[])
-{
-	int i = 0;
-	for (i = 0; i < argc; i++)
-	{
-		if (strcmp(argv[i], "--app") == 0)
-		{
-			if (strcmp(argv[i + 1], "wordcount") == 0)
-			{
-				app = 1;
-			}
-			else if (strcmp(argv[i + 1], "sort") == 0)
-			{
-				app = 0;
-			}
-		}
-		if (strcmp(argv[i], "--impl") == 0)
-		{
-			if (strcmp(argv[i + 1], "procs") == 0)
-			{
-				impl = 1;
-			}
-			else if (strcmp(argv[i + 1], "threads") == 0)
-			{
-				impl = 0;
-			}
-			
-		}
-		if (strcmp(argv[i], "--maps") == 0)
-		{
-			num_maps = atoi(argv[i + 1]);
-			//printf("%d\n", num_maps);
-		}
-		if (strcmp(argv[i], "--reduces") == 0)
-		{
-			num_reduces = atoi(argv[i + 1]);
-			//printf("%d\n", num_reduces);
-		}
-		if (strcmp(argv[i], "--input") == 0)
-		{
-			inputfile = strdup(argv[i + 1]);
-			//printf("in %s\n", inputfile);
-		}
-		if (strcmp(argv[i], "--output") == 0)
-		{
-			outfile = strdup(argv[i + 1]);
-			//printf("out %s\n", outfile);
-		}
-	}
-
-	if (outfile == NULL)
-	{
-		printf("No output file selected, defaulting to out.txt\n");
-		outfile = "out.txt";
-	}
-	if (inputfile == NULL)
-	{
-		printf("No input file selected...exiting\n");
-		exit(0);
-	}
-}
-*/
 void print(node *head)
 {
 	FILE* fd = fopen("test.txt", "w");
@@ -584,8 +986,9 @@ int main (int argc, char* argv[]) {
     strcpy(outFile, argv[12]);
     
     node* head = inputreader(inFile,type);
-
-    head = mapper(head,type,impl,maps,reduces);
+	FILE* fp;
+	fp = fopen(outFile, "w");
+    head = mapper(head,type,impl,maps,reduces, fp);
     return 0;
 
 }
